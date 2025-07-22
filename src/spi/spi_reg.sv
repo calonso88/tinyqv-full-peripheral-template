@@ -21,15 +21,8 @@ module spi_reg #(
     output logic reg_addr_v,
     output logic reg_data_o_dv,
     output logic reg_rw,
-    output logic [1:0] txn_width,
-    input  logic [7:0] status
+    output logic [1:0] txn_width
 );
-
-  // Map to outputs
-  assign reg_addr = addr;
-  assign reg_data_o = data;
-  assign reg_data_o_dv = dv;
-  assign spi_miso = tx_buffer[REG_W-1];
 
   // Start of frame - negedge of spi_cs_n
   logic sof;
@@ -88,8 +81,6 @@ module spi_reg #(
   logic tx_buffer_load;
   logic sample_addr;
   logic sample_data;
-
-  assign reg_addr_v = tx_buffer_load;
 
   // Next state logic
   always_comb begin
@@ -199,20 +190,28 @@ module spi_reg #(
     end
   end
 
-  // Data register and data valid strobe
-  logic [REG_W-1:0] data;
+  // Address output
+  assign reg_addr = addr;
+  assign reg_addr_v = tx_buffer_load;
+
+  // Data valid strobe
   logic dv;
 
-    // Data and DataValid (dv) Registers
+  // RX buffer can be directly assigned to the data output.  
+  // Previously this re-sampled but that cost 32 flops.
+  // DV is only indicated at the end of the SPI transaction and rx_buffer will be stable, 
+  // so there's no need for the extra 32-flop buffer.
+  assign reg_data_o = rx_buffer;
+  assign reg_data_o_dv = dv;
+
+  // DataValid (dv) Registers
   always_ff @(negedge(rstb) or posedge(clk)) begin
     if (!rstb) begin
-      data <= '0;
       dv <= '0;
     end else begin
       if (ena == 1'b1) begin
         dv <= '0;
         if (sample_data == 1'b1) begin
-          data <= rx_buffer;
           dv <= (1'b1 & reg_rw);
         end
       end
@@ -229,7 +228,7 @@ module spi_reg #(
     end else begin
       if (ena == 1'b1) begin
         if (sof == 1'b1) begin
-          tx_buffer <= status;
+          tx_buffer <= '0;
         end else if (tx_buffer_load == 1'b1) begin
           tx_buffer <= reg_data_i;
         end else if (spi_data_change == 1'b1) begin
@@ -238,5 +237,8 @@ module spi_reg #(
       end
     end
   end
+
+  // MISO output
+  assign spi_miso = tx_buffer[REG_W-1];
 
 endmodule
